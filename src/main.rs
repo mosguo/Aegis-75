@@ -21,9 +21,17 @@ use crate::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // 先用 stdout/stderr 打，避免 tracing 尚未初始化前錯誤被吃掉
     println!("[BOOT][INFO] Aegis-75 starting...");
 
-    let config = Config::from_env().context("failed to load config from environment")?;
+    let config = match Config::from_env() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("[ERROR][FATAL] failed to load config from environment: {e:#}");
+            std::process::exit(1);
+        }
+    };
+
     init_tracing(&config.logging.level);
 
     info!(
@@ -39,24 +47,38 @@ async fn main() -> anyhow::Result<()> {
     );
     info!(
         "[BOOT][INFO] zeroclaw_mode={}",
-        if config.zeroclaw_enabled { "control-plane" } else { "disabled" }
+        if config.zeroclaw_enabled {
+            "control-plane"
+        } else {
+            "disabled"
+        }
     );
 
     let startup = config.startup_checks();
+
     for warning_message in &startup.warnings {
         warn!("[WARN] {warning_message}");
     }
+
     for arch_error in &startup.architecture_errors {
         error!("[ERROR][ARCH] {arch_error}");
     }
-    if !startup.passed() {
-        error!("[ERROR][FATAL] runtime_checks=failed");
-        anyhow::bail!("startup architecture checks failed");
+
+    // 關鍵：不要因 startup check 失敗直接退出，先讓服務活著以利觀測
+    if startup.passed() {
+        info!("[BOOT][INFO] runtime_checks=passed");
+    } else {
+        error!("[ERROR][ARCH] runtime_checks=failed, continuing in degraded mode");
     }
-    info!("[BOOT][INFO] runtime_checks=passed");
 
     let zeroclaw = if config.zeroclaw_enabled {
-        Some(ZeroClawClient::from_config(&config)?)
+        match ZeroClawClient::from_config(&config) {
+            Ok(client) => Some(client),
+            Err(e) => {
+                error!("[ERROR][ARCH] zeroclaw initialization failed: {e:#}");
+                None
+            }
+        }
     } else {
         None
     };
@@ -72,7 +94,8 @@ async fn main() -> anyhow::Result<()> {
     spawn_heartbeat(state.clone());
 
     let app: Router = build_router(state);
-    let addr: SocketAddr = config.bind_addr.parse().context("invalid bind address")?;
+
+    let addr = resolve_bind_addr(&config)?;
     info!(
         %addr,
         role=%config.role,
@@ -86,9 +109,21 @@ async fn main() -> anyhow::Result<()> {
         "[RUNTIME][INFO] http_server started"
     );
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            error!("[ERROR][FATAL] failed to bind listener on {}: {}", addr, e);
+            return Err(e).context("failed to bind TCP listener");
+        }
+    };
+
     info!("[BOOT][SUCCESS] Aegis-75 READY");
-    axum::serve(listener, app).await?;
+
+    if let Err(e) = axum::serve(listener, app).await {
+        error!("[ERROR][FATAL] axum server terminated: {e}");
+        return Err(e).context("axum server terminated unexpectedly");
+    }
+
     Ok(())
 }
 
@@ -96,11 +131,39 @@ fn init_tracing(level: &str) {
     let filter = std::env::var("AEGIS_LOG")
         .or_else(|_| std::env::var("RUST_LOG"))
         .unwrap_or_else(|_| level.to_string());
+
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)
         .compact()
         .init();
+}
+
+fn resolve_bind_addr(config: &Config) -> anyhow::Result<SocketAddr> {
+    // 優先順序：
+    // 1. config.bind_addr
+    // 2. PORT -> 0.0.0.0:{PORT}
+    // 3. fallback 0.0.0.0:8080
+    let raw_addr = if !config.bind_addr.trim().is_empty() {
+        config.bind_addr.clone()
+    } else if let Ok(port) = std::env::var("PORT") {
+        format!("0.0.0.0:{port}")
+    } else {
+        "0.0.0.0:8080".to_string()
+    };
+
+    match raw_addr.parse::<SocketAddr>() {
+        Ok(addr) => Ok(addr),
+        Err(primary_err) => {
+            warn!(
+                "[WARN] invalid bind address '{}': {} ; falling back to 0.0.0.0:8080",
+                raw_addr, primary_err
+            );
+            "0.0.0.0:8080"
+                .parse::<SocketAddr>()
+                .context("failed to parse fallback bind address")
+        }
+    }
 }
 
 async fn announce_mode(state: &Arc<AppState>) {
@@ -137,7 +200,7 @@ async fn announce_mode(state: &Arc<AppState>) {
         warn!(
             future_target=%state.config.deployment.future_target,
             byoh_cutover_ready=state.config.deployment.byoh_cutover_ready,
-            physical_host_planned=state.config.identity.physical_host_planned,
+            physical_host_planned=%state.config.identity.physical_host_planned,
             "[WARN] byoh_enabled=true but running on zeabur (simulation mode)"
         );
     }
@@ -147,6 +210,7 @@ async fn announce_mode(state: &Arc<AppState>) {
         state.config.execution_mode,
         state.config.exchanges
     );
+
     info!(
         "[RUNTIME][INFO] dex_adapter initialized chains={:?}",
         state.config.dex_networks
@@ -169,6 +233,7 @@ fn spawn_heartbeat(state: Arc<AppState>) {
     }
 
     let interval_secs = state.config.logging.heartbeat_interval_secs.max(5);
+
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
         loop {
