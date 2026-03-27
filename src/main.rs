@@ -1,10 +1,11 @@
+mod arbitrage;
 mod control;
 mod core;
 mod dex;
 mod execution;
 mod http;
+mod market;
 mod types;
-
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 

@@ -3,13 +3,16 @@ use std::sync::Arc;
 use axum::{
     extract::State,
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use serde::Serialize;
 
-use crate::core::app::AppState;
-
+use crate::{
+    arbitrage,
+    core::app::AppState,
+    types::orders::{DexSimulationRequest, OrderIntent},
+};
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
@@ -19,6 +22,9 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/v1/config", get(config_view))
         .route("/v1/runtime/capabilities", get(runtime_capabilities))
         .route("/v1/topology", get(topology))
+        .route("/v1/order/simulate", post(simulate_order))
+        .route("/v1/dex/simulate", post(simulate_dex))
+        .route("/v1/arbitrage/btcusdt", get(arbitrage_btcusdt))
         .with_state(state)
 }
 
@@ -86,6 +92,30 @@ async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         service: "aegis-75",
         modules,
     })
+}
+
+async fn simulate_order(
+    State(state): State<Arc<AppState>>,
+    Json(intent): Json<OrderIntent>,
+) -> impl IntoResponse {
+    Json(state.execution.simulate(intent))
+}
+
+async fn simulate_dex(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<DexSimulationRequest>,
+) -> impl IntoResponse {
+    Json(state.dex.simulate(req))
+}
+
+async fn arbitrage_btcusdt() -> impl IntoResponse {
+    match arbitrage::evaluate().await {
+        Ok(result) => Json(result),
+        Err(e) => Json(serde_json::json!({
+            "error": e.to_string(),
+            "note": "failed to evaluate arbitrage with real price sources"
+        })),
+    }
 }
 
 #[derive(Serialize)]
