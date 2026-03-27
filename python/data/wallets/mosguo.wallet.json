@@ -1,0 +1,15 @@
+{
+  "userId": "mosguo",
+  "walletId": "wallet-mosguo-001",
+  "balance": 1000,
+  "currency": "USDT",
+  "status": "ACTIVE",
+  "encryptedPrivateKey": "BASE64_ENCRYPTED_DATA",
+  "depositCurrency": "USDT",
+  "depositNetwork": "TRC20",
+  "depositAddress": "TQ8ExampleDepositAddressReplaceMe123456789",
+  "addressTag": "",
+  "walletType": "SPOT",
+  "displayName": "mosguo primary wallet",
+  "updatedAt": "2026-03-27T09:10:00+08:00"
+}

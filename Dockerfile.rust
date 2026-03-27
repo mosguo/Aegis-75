@@ -1,0 +1,17 @@
+# This Dockerfile assumes your Rust gateway lives at repository root
+# with Cargo.toml and src/. If your Rust project path differs, adjust COPY lines.
+
+FROM rust:1.77-slim AS builder
+WORKDIR /app
+COPY Cargo.toml Cargo.lock* ./
+COPY src ./src
+RUN cargo build --release || (echo "Rust build failed. Check Cargo.toml/src path." && exit 1)
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /app/target/release /app/bin
+EXPOSE 8080
+
+# Replace 'aegis75' with your real binary name if needed.
+CMD ["/bin/sh", "-c", "BIN=$(find /app/bin -maxdepth 1 -type f -executable | head -n 1); exec "$BIN""]

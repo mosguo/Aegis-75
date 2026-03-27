@@ -1,0 +1,14 @@
+{
+  "pairs": [
+    {
+      "symbol": "BTCUSDT",
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT",
+      "status": "ACTIVE",
+      "spreadThreshold": 50,
+      "autoTrigger": true,
+      "executionMode": "SIMULATION",
+      "updatedAt": "2026-03-27T10:00:00+08:00"
+    }
+  ]
+}

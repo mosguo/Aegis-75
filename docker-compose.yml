@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  python-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    container_name: aegis75-python
+    env_file:
+      - .env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      AEGIS75_EXCHANGE: "${AEGIS75_EXCHANGE:-binance}"
+      AEGIS75_ENABLE_LIVE_TRADING: "${AEGIS75_ENABLE_LIVE_TRADING:-false}"
+      AEGIS75_EXCHANGE_API_KEY: "${AEGIS75_EXCHANGE_API_KEY:-}"
+      AEGIS75_EXCHANGE_API_SECRET: "${AEGIS75_EXCHANGE_API_SECRET:-}"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./python/data:/app/python/data
+    restart: unless-stopped
+
+  rust-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.rust
+    container_name: aegis75-rust
+    environment:
+      RUST_LOG: "${RUST_LOG:-info}"
+      PYTHON_API_BASE_URL: "http://python-api:8000"
+      GATEWAY_PORT: "8080"
+    depends_on:
+      - python-api
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
