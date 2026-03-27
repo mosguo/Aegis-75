@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aegis-75 Dashboard</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121933;
+      --panel-soft: #0f1730;
+      --border: #26304f;
+      --text: #eef2ff;
+      --muted: #9fb0d8;
+      --ok: #4ade80;
+      --warn: #fbbf24;
+      --bad: #f87171;
+      --accent: #7dd3fc;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .header-row {
+      margin-bottom: 8px;
+    }
+
+    .top-focus {
+      margin-top: -18px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+      max-height: calc(100vh - 520px);
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 12px 14px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 10px;
+      align-items: center;
+    }
+
+    .kv-label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .kv-value {
+      text-align: right;
+      font-weight: 600;
+      color: var(--text);
+      word-break: break-word;
+      font-size: 13px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge.ok {
+      background: rgba(74, 222, 128, 0.15);
+      color: var(--ok);
+    }
+
+    .badge.warn {
+      background: rgba(251, 191, 36, 0.15);
+      color: var(--warn);
+    }
+
+    .badge.bad {
+      background: rgba(248, 113, 113, 0.15);
+      color: var(--bad);
+    }
+
+    .panel-table {
+      width: 94%;
+      table-layout: fixed;
+      border-collapse: collapse;
+      margin-top: 18px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .panel-table th,
+    .panel-table td {
+      padding: 4px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: middle;
+      white-space: nowrap;
+      line-height: 1;
+    }
+
+    .panel-table th {
+      color: var(--muted);
+      background: var(--panel-soft);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .panel-table td {
+      font-size: 14px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .panel-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 16px;
+    }
+
+    .panel-table .col-symbol { width: 8%; }
+    .panel-table .col-binance { width: 8%; }
+    .panel-table .col-okx { width: 8%; }
+    .panel-table .col-spread { width: 6%; }
+    .panel-table .col-spread-pct { width: 6%; }
+    .panel-table .col-decision { width: 13%; }
+    .panel-table .col-arbitrage { width: 6%; }
+    .panel-table .col-age { width: 6%; }
+    .panel-table .col-last-refresh { width: 10%; }
+    .panel-table .col-threshold { width: 7%; }
+    .panel-table .col-auto-trigger { width: 6%; }
+    .panel-table .col-execution-mode { width: 7%; }
+    .panel-table .col-status { width: 6%; }
+    .panel-table .col-action { width: 6%; }
+
+    .mono {
+      font-family: Consolas, "Cascadia Code", monospace;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 6px 8px;
+      word-break: break-all;
+      color: var(--text);
+    }
+
+    .btn,
+    .field,
+    .select {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0d152d;
+      color: var(--text);
+      font: inherit;
+    }
+
+    .btn {
+      padding: 6px 10px;
+      cursor: pointer;
+      min-width: 88px;
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .field,
+    .select {
+      width: 100%;
+      padding: 4px 6px;
+    }
+
+    .switch {
+      min-width: 56px;
+      height: 22px;
+      border-radius: 999px;
+      background: #334155;
+      cursor: pointer;
+      transition: 0.2s ease;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 10px;
+      font-size: 12px;
+      line-height: 1;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .switch.on {
+      background: rgba(74, 222, 128, 0.22);
+      border-color: rgba(74, 222, 128, 0.35);
+      color: var(--ok);
+    }
+
+    .switch.off {
+      color: var(--bad);
+    }
+
+    .saved {
+      color: var(--ok);
+      font-size: 12px;
+      font-weight: 700;
+      margin-left: 8px;
+    }
+
+    .error {
+      color: var(--bad);
+      font-size: 13px;
+    }
+
+    .footer-note {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .message-panel {
+      margin-top: 10px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 10px 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+    }
+
+    .message-panel h2 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .message-list {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+      grid-template-rows: repeat(5, minmax(0, 1fr));
+      min-height: 150px;
+      max-height: 150px;
+    }
+
+    .message-item {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 12px;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(38, 48, 79, 0.75);
+      border-radius: 12px;
+      padding: 2px 8px;
+      font-size: 13px;
+      line-height: 1;
+      min-height: 0;
+    }
+
+    .message-time {
+      color: var(--muted);
+      font-family: Consolas, "Cascadia Code", monospace;
+      line-height: 1;
+    }
+
+    .message-text {
+      color: var(--text);
+      line-height: 1;
+      word-break: break-word;
+    }
+
+    @media (max-width: 1080px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .header-row {
+        flex-direction: column;
+      }
+
+      .nav-links {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 760px) {
+      body {
+        padding: 16px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header-row">
+    <div>
+      <h1>Aegis-75 Dashboard</h1>
+      <div class="small" id="updatedAt">更新時間：-</div>
+    </div>
+  </div>
+
+  <div class="top-focus">
+    <div class="table-wrap">
+      <table class="panel-table">
+        <colgroup>
+          <col class="col-symbol" />
+          <col class="col-binance" />
+          <col class="col-okx" />
+          <col class="col-spread" />
+          <col class="col-spread-pct" />
+          <col class="col-decision" />
+          <col class="col-arbitrage" />
+          <col class="col-age" />
+          <col class="col-last-refresh" />
+          <col class="col-threshold" />
+          <col class="col-auto-trigger" />
+          <col class="col-execution-mode" />
+          <col class="col-status" />
+          <col class="col-action" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th>交易對</th>
+            <th>Binance</th>
+            <th>OKX</th>
+            <th>Spread</th>
+            <th>Spread %</th>
+            <th>Decision</th>
+            <th>Arbitrage</th>
+            <th>Age (ms)</th>
+            <th>Last Refresh</th>
+            <th>Threshold</th>
+            <th>自動觸發</th>
+            <th>執行模式</th>
+            <th>狀態</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="pairsBody">
+          <tr><td colspan="14">讀取中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="note" class="footer-note"></div>
+    <section class="message-panel">
+      <h2>動態訊息</h2>
+      <div id="messageList" class="message-list"></div>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>錢包概況</h2>
+      <div id="walletSummary" class="kv">
+        <div class="kv-label">狀態</div><div class="kv-value">讀取中</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>入金資訊</h2>
+      <div id="walletDeposit" class="kv">
+        <div class="kv-label">地址</div><div class="kv-value">讀取中</div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>操作說明</h2>
+      <div class="kv">
+        <div class="kv-label">Threshold</div><div class="kv-value">允許修改</div>
+        <div class="kv-label">自動觸發</div><div class="kv-value">Switch 切換</div>
+        <div class="kv-label">執行模式</div><div class="kv-value">模擬 / LIVE</div>
+        <div class="kv-label">安全規則</div><div class="kv-value">LIVE 不直接下單</div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    function esc(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "-";
+      const normalized = String(value).replace(" ", "T");
+      const date = new Date(normalized);
+      if (Number.isNaN(date.getTime())) {
+        return String(value).replace("T", " ").slice(0, 19);
+      }
+      return date.toLocaleString("zh-TW", { hour12: false }).replace(/\//g, "-");
+    }
+
+    function formatNumber(value, digits = 4) {
+      if (value === null || value === undefined || value === "") return "-";
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed.toFixed(digits) : "-";
+    }
+
+    function statusBadge(text, cls) {
+      return `<span class="badge ${cls}">${esc(text)}</span>`;
+    }
+
+    function walletStatus(wallet) {
+      if (wallet?.depositAddress) return statusBadge("正常", "ok");
+      return statusBadge("地址未填", "warn");
+    }
+
+    function pairModeLabel(mode) {
+      return mode === "LIVE" ? "LIVE" : "模擬";
+    }
+
+    function pairStatusBadge(status) {
+      if (status === "ACTIVE") return statusBadge("啟用", "ok");
+      if (!status) return statusBadge("未知", "warn");
+      return statusBadge(status, "warn");
+    }
+
+    function autoTriggerBadge(enabled) {
+      return enabled ? statusBadge("開啟", "ok") : statusBadge("關閉", "bad");
+    }
+
+    function arbitrageBadge(value) {
+      if (value === true) return statusBadge("YES", "ok");
+      if (value === false) return statusBadge("NO", "bad");
+      return statusBadge("NO DATA", "warn");
+    }
+
+    function updateTimestamp() {
+      document.getElementById("updatedAt").textContent = `更新時間：${new Date().toLocaleString("zh-TW")}`;
+    }
+
+    function renderWallet(wallet) {
+      const summary = document.getElementById("walletSummary");
+      const deposit = document.getElementById("walletDeposit");
+      const depositAddress = wallet.depositAddress || "";
+      const copyDisabled = depositAddress ? "" : "disabled";
+
+      summary.innerHTML = `
+        <div class="kv-label">狀態</div><div class="kv-value">${walletStatus(wallet)}</div>
+        <div class="kv-label">使用者</div><div class="kv-value">${esc(wallet.userId)}</div>
+        <div class="kv-label">錢包 ID</div><div class="kv-value">${esc(wallet.walletId)}</div>
+        <div class="kv-label">幣別</div><div class="kv-value">${esc(wallet.currency)}</div>
+        <div class="kv-label">餘額</div><div class="kv-value">${Number(wallet.balance).toLocaleString("zh-TW")}</div>
+        <div class="kv-label">更新時間</div><div class="kv-value">${esc(formatDate(wallet.updatedAt))}</div>
+      `;
+
+      deposit.innerHTML = `
+        <div class="kv-label">入金幣別</div><div class="kv-value">${esc(wallet.depositCurrency || wallet.currency || "-")}</div>
+        <div class="kv-label">入金網路</div><div class="kv-value">${esc(wallet.depositNetwork || "-")}</div>
+        <div class="kv-label">入金地址</div><div class="kv-value">-</div>
+        <div class="kv-label" style="grid-column: 1 / -1;">地址內容</div>
+        <div style="grid-column: 1 / -1;" class="mono">${esc(depositAddress || "-")}</div>
+        <div class="kv-label">複製地址</div>
+        <div class="kv-value">
+          <button class="btn" onclick='copyAddress(${JSON.stringify(depositAddress)})' ${copyDisabled}>複製地址</button>
+        </div>
+      `;
+    }
+
+    function renderWalletError(message) {
+      document.getElementById("walletSummary").innerHTML = `<div class="error">${esc(message)}</div>`;
+      document.getElementById("walletDeposit").innerHTML = `<div class="error">${esc(message)}</div>`;
+    }
+
+    function switchHtml(symbol, checked) {
+      return `
+        <button type="button" class="switch ${checked ? "on" : "off"}" onclick="toggleAuto('${esc(symbol)}')">${checked ? "開啟" : "關閉"}</button>
+      `;
+    }
+
+    const REFRESH_INTERVAL_MS = 3000;
+    let pairsState = [];
+    let messageState = [];
+    let refreshInFlight = false;
+
+    function nowLabel() {
+      return new Date().toLocaleTimeString("zh-TW", { hour12: false });
+    }
+
+    function pushMessage(text) {
+      if (typeof text === "string" && (/已更新/.test(text) || /共\s*\d+\s*組交易對/.test(text))) {
+        return;
+      }
+      messageState.unshift({
+        time: nowLabel(),
+        text
+      });
+      messageState = messageState.slice(0, 5);
+      renderMessages();
+    }
+
+    function renderMessages() {
+      const root = document.getElementById("messageList");
+      if (!messageState.length) {
+        root.innerHTML = `
+          <div class="message-item">
+            <div class="message-time">--:--:--</div>
+            <div class="message-text">尚未收到事件，交易對被觸發後會在這裡顯示交易概要。</div>
+          </div>
+          <div class="message-item">
+            <div class="message-time">--:--:--</div>
+            <div class="message-text">系統已保留 5 列動態訊息空間。</div>
+          </div>
+          <div class="message-item">
+            <div class="message-time">--:--:--</div>
+            <div class="message-text">調整 Threshold、自動觸發或執行模式後，也會同步記錄操作。</div>
+          </div>
+          <div class="message-item">
+            <div class="message-time">--:--:--</div>
+            <div class="message-text">當 Spread 達到觸發條件時，會顯示交易對、Spread、模式與動作摘要。</div>
+          </div>
+          <div class="message-item">
+            <div class="message-time">--:--:--</div>
+            <div class="message-text">目前等待新的即時監控事件。</div>
+          </div>
+        `;
+        return;
+      }
+
+      root.innerHTML = messageState.map((item) => `
+        <div class="message-item">
+          <div class="message-time">${esc(item.time)}</div>
+          <div class="message-text">${esc(item.text)}</div>
+        </div>
+      `).join("");
+    }
+
+    function isTriggered(pair) {
+      if (pair.arbitrage === true) return true;
+      const spreadAbs = Number(pair.spreadAbs);
+      const threshold = Number(pair.spreadThreshold);
+      return Boolean(
+        pair.autoTrigger &&
+        pair.status === "ACTIVE" &&
+        Number.isFinite(spreadAbs) &&
+        Number.isFinite(threshold) &&
+        spreadAbs >= threshold
+      );
+    }
+
+    function triggerSummary(pair) {
+      return `${pair.symbol} 已觸發，Spread=${formatNumber(pair.spreadAbs)}，Threshold=${formatNumber(pair.spreadThreshold)}，模式=${pairModeLabel(pair.executionMode)}，Decision=${pair.decision || "-"}`;
+    }
+
+    function estimateProfitUsdt(pair) {
+      const tradeNotionalUsdt = 100;
+      const binancePrice = Number(pair.binancePrice);
+      const okxPrice = Number(pair.okxPrice);
+      const spreadAbs = Number(pair.spreadAbs);
+      const entryPrice = Math.min(binancePrice, okxPrice);
+
+      if (!Number.isFinite(entryPrice) || entryPrice <= 0 || !Number.isFinite(spreadAbs) || spreadAbs <= 0) {
+        return 0;
+      }
+
+      return (tradeNotionalUsdt / entryPrice) * spreadAbs;
+    }
+
+    function triggerSummary(pair) {
+      const estimatedProfitUsdt = estimateProfitUsdt(pair);
+      return `${pair.symbol} Spread=${formatNumber(pair.spreadAbs)} Threshold=${formatNumber(pair.spreadThreshold)} Mode=${pairModeLabel(pair.executionMode)} Decision=${pair.decision || "-"} 假設獲利=${formatNumber(estimatedProfitUsdt, 4)} USDT`;
+    }
+
+    function updateTriggeredMessages() {
+      const triggered = pairsState.filter(isTriggered);
+      if (!triggered.length) return;
+
+      for (const pair of triggered.slice(0, 5)) {
+        const summary = triggerSummary(pair);
+        if (!messageState.some((item) => item.text === summary)) {
+          pushMessage(summary);
+        }
+      }
+    }
+
+    function renderPairs() {
+      const tbody = document.getElementById("pairsBody");
+      if (!pairsState.length) {
+        tbody.innerHTML = `<tr><td colspan="14">目前沒有交易對資料</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = pairsState.map((pair) => `
+        <tr>
+          <td>${esc(pair.symbol)}</td>
+          <td>${formatNumber(pair.binancePrice)}</td>
+          <td>${formatNumber(pair.okxPrice)}</td>
+          <td>${formatNumber(pair.spreadAbs)}</td>
+          <td>${formatNumber(pair.spreadPct)}</td>
+          <td>${esc(pair.decision || "-")}</td>
+          <td>${arbitrageBadge(pair.arbitrage)}</td>
+          <td>${pair.ageMs ?? "-"}</td>
+          <td>${esc(formatDate(pair.lastRefresh))}</td>
+          <td>
+            <input
+              class="field"
+              type="number"
+              min="0"
+              step="0.01"
+              value="${esc(pair.spreadThreshold)}"
+              onchange="updateThreshold('${esc(pair.symbol)}', this.value)"
+              style="width: 100%; min-width: 0;"
+            />
+          </td>
+          <td>${switchHtml(pair.symbol, !!pair.autoTrigger)}</td>
+          <td>
+            <select class="select" onchange="updateMode('${esc(pair.symbol)}', this.value)" style="width: 100%; min-width: 0;">
+              <option value="SIMULATION" ${pair.executionMode === "SIMULATION" ? "selected" : ""}>模擬</option>
+              <option value="LIVE" ${pair.executionMode === "LIVE" ? "selected" : ""}>LIVE</option>
+            </select>
+          </td>
+          <td>${pairStatusBadge(pair.status)}</td>
+          <td>
+            <button class="btn" onclick="savePair('${esc(pair.symbol)}')">儲存</button>
+            <span id="saved-${esc(pair.symbol)}" class="saved"></span>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function renderPairsError(message) {
+      document.getElementById("pairsBody").innerHTML = `<tr><td colspan="14" class="error">${esc(message)}</td></tr>`;
+    }
+
+    function findPair(symbol) {
+      return pairsState.find((pair) => pair.symbol === symbol);
+    }
+
+    function updateThreshold(symbol, value) {
+      const pair = findPair(symbol);
+      if (!pair) return;
+      if (value === "") {
+        pair.spreadThreshold = "";
+        return;
+      }
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        pair.spreadThreshold = parsed;
+      }
+    }
+
+    function toggleAuto(symbol) {
+      const pair = findPair(symbol);
+      if (!pair) return;
+      pair.autoTrigger = !pair.autoTrigger;
+      renderPairs();
+    }
+
+    function updateMode(symbol, value) {
+      const pair = findPair(symbol);
+      if (!pair) return;
+      pair.executionMode = value;
+    }
+
+    async function loadWallet() {
+      try {
+        const res = await fetch("/api/dashboard/wallet");
+        const data = await res.json();
+        if (!res.ok) {
+          renderWalletError(data?.error?.message || "錢包資料讀取失敗");
+          return;
+        }
+        renderWallet(data);
+      } catch (error) {
+        renderWalletError("錢包資料讀取失敗");
+        console.error(error);
+      }
+    }
+
+    async function loadPairs(options = {}) {
+      const { initial = false } = options;
+      try {
+        const res = await fetch("/api/dashboard/trading-pairs");
+        const data = await res.json();
+        if (!res.ok) {
+          renderPairsError(data?.error?.message || "交易對資料讀取失敗");
+          return;
+        }
+        const nextPairs = data.pairs || [];
+        const changed = JSON.stringify(nextPairs) !== JSON.stringify(pairsState);
+        pairsState = nextPairs;
+        renderPairs();
+        updateTriggeredMessages();
+        if (initial) {
+          pushMessage(`即時監控已載入 ${pairsState.length} 組交易對。`);
+        } else if (changed) {
+          pushMessage(`即時監控已更新，共 ${pairsState.length} 組交易對。`);
+        }
+      } catch (error) {
+        renderPairsError("交易對資料讀取失敗");
+        console.error(error);
+      }
+    }
+
+    async function refreshDashboard() {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        await Promise.all([loadWallet(), loadPairs()]);
+        updateTimestamp();
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+
+    async function savePair(symbol) {
+      const pair = findPair(symbol);
+      if (!pair) return;
+      if (pair.spreadThreshold === "" || !Number.isFinite(Number(pair.spreadThreshold))) {
+        alert("Threshold 必須是有效數字。");
+        return;
+      }
+      if (Number(pair.spreadThreshold) < 0) {
+        alert("Threshold 不可小於 0。");
+        return;
+      }
+      if (!["SIMULATION", "LIVE"].includes(pair.executionMode)) {
+        alert("執行模式只允許 SIMULATION 或 LIVE。");
+        return;
+      }
+
+      const res = await fetch("/api/dashboard/trading-pairs/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          symbol: pair.symbol,
+          spreadThreshold: Number(pair.spreadThreshold),
+          autoTrigger: !!pair.autoTrigger,
+          executionMode: pair.executionMode
+        })
+      });
+
+      const payload = await res.json();
+      if (!res.ok) {
+        alert(payload?.error?.message || "儲存失敗");
+        return;
+      }
+
+      const index = pairsState.findIndex((item) => item.symbol === symbol);
+      if (index >= 0 && payload?.pair) {
+        pairsState[index] = payload.pair;
+        renderPairs();
+      }
+
+      const saved = document.getElementById(`saved-${symbol}`);
+      if (saved) {
+        saved.textContent = "已儲存";
+        setTimeout(() => { saved.textContent = ""; }, 1200);
+      }
+
+      document.getElementById("note").textContent = `最新操作：${symbol} 已更新，模式為 ${pairModeLabel(pair.executionMode)}。`;
+      pushMessage(`${symbol} 設定已更新，Threshold=${formatNumber(pair.spreadThreshold)}，自動觸發=${pair.autoTrigger ? "開啟" : "關閉"}，模式=${pairModeLabel(pair.executionMode)}。`);
+      if (isTriggered(pair)) {
+        pushMessage(triggerSummary(pair));
+      }
+      updateTimestamp();
+    }
+
+    async function copyAddress(text) {
+      if (!text) return;
+      await navigator.clipboard.writeText(text);
+      document.getElementById("note").textContent = "入金地址已複製。";
+      pushMessage("已複製入金地址。");
+      updateTimestamp();
+    }
+
+    updateTimestamp();
+    renderMessages();
+    loadWallet();
+    loadPairs({ initial: true });
+    setInterval(refreshDashboard, REFRESH_INTERVAL_MS);
+  </script>
+</body>
+</html>

@@ -26,6 +26,8 @@ th { color:#9fb0d8; background:#0f1730; }
 .badge.warn { background:rgba(251,191,36,.15); }
 .badge.bad { background:rgba(248,113,113,.15); }
 .footer { margin-top:12px; }
+.table-wrap { overflow-x:auto; border-radius:16px; }
+.note-cell { min-width:260px; color:#c8d2ef; }
 @media (max-width: 960px) { .grid { grid-template-columns:1fr; } }
 </style>
 </head>
@@ -64,27 +66,32 @@ th { color:#9fb0d8; background:#0f1730; }
     </div>
   </div>
 </div>
-<table>
-  <thead>
-    <tr>
-      <th>Pair</th>
-      <th>Binance</th>
-      <th>OKX</th>
-      <th>Spread</th>
-      <th>Spread %</th>
-      <th>Decision</th>
-      <th>Arbitrage</th>
-      <th>Age (ms)</th>
-      <th>Last Refresh</th>
-    </tr>
-  </thead>
-  <tbody id="pairsBody"></tbody>
-</table>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Pair</th>
+        <th>Binance</th>
+        <th>OKX</th>
+        <th>Spread</th>
+        <th>Spread %</th>
+        <th>Threshold</th>
+        <th>Decision</th>
+        <th>Arbitrage</th>
+        <th>Age (ms)</th>
+        <th>Last Refresh</th>
+        <th>Note</th>
+      </tr>
+    </thead>
+    <tbody id="pairsBody"></tbody>
+  </table>
+</div>
 <div class="footer small" id="note">-</div>
 <script>
 function num(v, digits=4){ return v===null||v===undefined?'-':Number(v).toFixed(digits); }
 function clsFromStatus(v){ if(v===true||v==='ok'||v==='connected') return 'ok'; if(v===false||v==='degraded'||v==='down') return 'bad'; return 'warn'; }
 function badge(text, cls){ return `<span class="badge ${cls}">${text}</span>`; }
+function esc(v){ return String(v ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }
 function render(summary){
   document.getElementById('updatedAt').textContent = 'Updated: ' + summary.timestamp;
   document.getElementById('statusText').innerHTML = badge(summary.status, clsFromStatus(summary.status));
@@ -112,10 +119,12 @@ function render(summary){
       <td>${num(pair.okx_price, 4)}</td>
       <td>${num(pair.spread_abs, 4)}</td>
       <td>${num(pair.spread_pct, 4)}</td>
+      <td>${num(pair.threshold, 4)}</td>
       <td>${pair.decision}</td>
       <td>${pair.arbitrage === null ? badge('NO DATA', 'warn') : pair.arbitrage ? badge('YES', 'ok') : badge('NO', 'bad')}</td>
       <td>${pair.age_ms ?? '-'}</td>
-      <td>${pair.last_refresh_utc}</td>`;
+      <td>${pair.last_refresh_utc}</td>
+      <td class="note-cell">${esc(pair.note)}</td>`;
     tbody.appendChild(tr);
   }
 }

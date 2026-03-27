@@ -1,0 +1,197 @@
+Plan Level Roadmap
+Date: 2026-03-27
+Project: Aegis-75
+
+==============================
+Level 4 工作清單
+==============================
+
+Level 4.1 基本交易
+------------------------------
+目標
+- 建立可查詢、可驗證的基本交易能力
+- 讓 dashboard、API、simulate、訊息輸出使用一致的交易資料
+
+工作項目
+- 建立即時報價整合的正式資料流
+- 建立交易對 registry 與 venue symbol mapping
+- 查詢各交易所支援的交易對與可用性
+- 建立 open orders / pending orders / executed trades 基本資料模型
+- 提供目前掛單總量、各交易對掛單量、成交量、成交筆數查詢
+- 將每次交易預設以 100 USDT 作為假設交易總額
+- 建立假設獲利 profit model v1
+- 在 dashboard 顯示 decision、arbitrage、假設獲利、掛單總量、成交統計
+- 統一 Rust 與 Python 的交易資訊來源
+
+完成標準
+- 可查詢目前掛單總量
+- 可查詢成交統計
+- 可查詢各交易對目前是否可交易
+- 每筆 decision 可附帶假設獲利 USDT
+- dashboard 與 API 顯示一致
+
+Level 4.2 策略交易
+------------------------------
+目標
+- 將策略規則、風控規則、獲利計算納入同一套決策流程
+
+工作項目
+- 將 threshold、auto trigger、execution mode 正式納入決策流程
+- 建立 arbitrage 規則化判斷
+- 建立風控規則
+- 將手續費、滑點、DEX gas 納入 profit model v2
+- 區分毛利、淨利、報酬率
+- 建立不可執行原因分類
+- 建立策略訊號與 decision 一致性驗證
+
+完成標準
+- decision 不是只看 spread
+- decision 會反映 threshold、風控、venue 可用性
+- 假設獲利可區分毛利與淨利
+- dashboard 可顯示不可執行原因
+
+Level 4.3 系統部署
+------------------------------
+目標
+- 讓交易系統在 Zeabur 驗證環境中可穩定部署、可觀察、可驗證
+
+工作項目
+- 建立 Zeabur 驗證 checklist
+- 驗證 healthz / readyz / dashboard / stream / summary
+- 驗證拓樸設定、節點角色、deployment target
+- 驗證 logging、alert、runtime capability
+- 驗證 Python 與 Rust 服務的相依狀態
+- 驗證 BYOH 語意與 Zeabur 驗證階段一致
+
+完成標準
+- Zeabur 上部署成功
+- readiness 可正確反映依賴與降級狀態
+- dashboard 與 API 在 Zeabur 可正常使用
+- 交易相關資訊可被觀察與追蹤
+
+Level 4.4 動態策略
+------------------------------
+目標
+- 讓策略參數可依市場變化動態調整
+
+工作項目
+- 動態 threshold
+- 動態策略切換
+- 多策略比較
+- 根據市場狀態調整 decision 權重
+- 預留自動化策略引擎介面
+
+完成標準
+- 策略不再完全依賴靜態閾值
+- 可切換不同策略模式
+- 可追蹤不同策略效果
+
+==============================
+交易邏輯正確性驗證清單
+==============================
+
+驗證面向 A：市場資料正確性
+------------------------------
+- 確認 Binance、OKX、DEX 的 symbol mapping 正確
+- 確認同一 canonical pair 在不同 venue 的價格欄位對應正確
+- 確認資料新鮮度 freshness 可被判斷
+- 確認 stale data 會阻擋 decision 或標記 degraded
+- 確認不可用交易對不進入交易決策
+
+驗證面向 B：決策邏輯正確性
+------------------------------
+- spread 小於 threshold 時，decision 應為 NO_ACTION
+- spread 大於 threshold 時，不代表一定可交易，仍需經過風控
+- auto trigger 關閉時，不應進入觸發交易
+- execution mode 為 SIMULATION 時，不應視為真實下單
+- control-plane 角色不應直接成為可執行交易角色
+
+驗證面向 C：獲利模型正確性
+------------------------------
+- profit model v1 使用每次 100 USDT 作為假設交易總額
+- quantity = 100 USDT / 買入側價格
+- gross profit = quantity x spread
+- net profit = gross profit - fee - slippage - gas
+- v1 階段可先只輸出 gross profit 或 simplified profit
+- v2 階段再納入 fee、slippage、gas
+
+驗證面向 D：掛單與成交狀態正確性
+------------------------------
+- simulate 後是否建立可查詢的交易紀錄
+- open order、pending、filled、cancelled、rejected 是否有明確狀態
+- 掛單總量與成交總量是否可彙總
+- 各交易對的成交統計是否正確
+
+驗證面向 E：資料一致性
+------------------------------
+- Python dashboard 與 Rust dashboard 的 decision 是否一致
+- Python API 與 Rust summary 的 spread、arbitrage 是否一致
+- dashboard 顯示與 API response 是否一致
+- 訊息中的假設獲利與表格中的假設獲利是否一致
+
+==============================
+交易邏輯測試情境
+==============================
+
+情境 1：spread 小於 threshold
+- 條件：spread = 0.6，threshold = 2.0
+- 預期：NO_ACTION
+- 預期：arbitrage = false
+- 預期：假設獲利可存在，但不可作為可執行訊號
+
+情境 2：spread 大於 threshold，auto trigger 關閉
+- 條件：spread = 4.8，threshold = 2.0，auto trigger = false
+- 預期：可顯示 arbitrage signal
+- 預期：不可自動觸發交易
+
+情境 3：spread 大於 threshold，auto trigger 開啟
+- 條件：spread = 4.8，threshold = 2.0，auto trigger = true
+- 預期：進入觸發條件
+- 預期：訊息顯示 decision 與假設獲利
+
+情境 4：交易對不存在於某交易所
+- 條件：某 pair 在 Binance 可用，但在 OKX 不可用
+- 預期：標記 venue unavailable
+- 預期：不得產生錯誤交易 decision
+
+情境 5：資料過期
+- 條件：某 venue 報價 age 過高
+- 預期：標記 stale
+- 預期：不進行可執行 decision
+
+情境 6：control-plane 角色模擬下單
+- 條件：role = control-plane
+- 預期：accepted = false 或 validation only
+- 預期：不得被視為真實可執行交易
+
+情境 7：100 USDT 假設獲利
+- 條件：買入價格 = 66664.7，spread = 4.86
+- 預期：quantity = 100 / 66664.7
+- 預期：gross profit = quantity x 4.86
+- 預期：結果約為 0.0073 USDT
+
+==============================
+Profit Model 整合建議
+==============================
+
+結論
+- 可以直接先整合 profit model
+- 第一版先採固定每次 100 USDT 假設交易總額
+- 第一版先算 simplified profit
+
+Profit Model v1
+- input：pair、decision、buy price、sell price、spread
+- 假設交易總額：100 USDT
+- quantity = 100 / min(binance price, okx price)
+- estimated profit usdt = quantity x spread
+- 先不扣 fee、slippage、gas
+
+Profit Model v2
+- 加入 fee
+- 加入 slippage
+- 加入 gas
+- 輸出 gross profit、net profit、roi
+
+建議優先順序
+- 先完成 v1 並掛到 dashboard、訊息、API
+- 再完成 v2 納入策略決策
