@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::core::app::AppState;
 
+
 pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(root))

@@ -4,6 +4,7 @@ use url::Url;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "kebab-case")]
+
 pub enum Role {
     ControlPlane,
     ExecutionCore,

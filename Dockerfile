@@ -19,4 +19,5 @@ COPY --from=builder /app/target/release/aegis-75 /usr/local/bin/aegis-75
 ENV PORT=8080
 EXPOSE 8080
 
+
 CMD ["aegis-75"]
