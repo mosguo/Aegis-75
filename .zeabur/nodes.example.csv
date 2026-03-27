@@ -1,0 +1,9 @@
+node_id,region,host_class,role,execution_mode,hub_mode,deployment_target,future_target,logical_host_id,runtime_host_id,notes
+byoh-hub-01,private-dc-profile,byoh,hybrid,paper,data-execution-hub,zeabur,byoh,byoh-hub-01,zb-byoh-hub-01,run BYOH semantics on Zeabur first then cut over to physical host
+hk-01,ap-east-1,cloud,control-plane,paper,edge,zeabur,zeabur,hk-01,zb-hk-01,apac control fallback
+tk-01,ap-northeast-1,cloud,trading-unit,paper,edge,zeabur,zeabur,tk-01,zb-tk-01,apac cex
+sg-01,ap-southeast-1,cloud,trading-unit,paper,edge,zeabur,zeabur,sg-01,zb-sg-01,apac dex
+fra-01,eu-central-1,cloud,trading-unit,paper,edge,zeabur,zeabur,fra-01,zb-fra-01,eu cex
+lon-01,eu-west-2,cloud,execution-core,paper,edge,zeabur,zeabur,lon-01,zb-lon-01,eu routing
+use1-01,us-east-1,cloud,trading-unit,paper,edge,zeabur,zeabur,use1-01,zb-use1-01,us cex
+usw-01,us-west-1,cloud,execution-core,paper,edge,zeabur,zeabur,usw-01,zb-usw-01,solana routing
