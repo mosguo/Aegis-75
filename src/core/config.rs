@@ -228,12 +228,18 @@ impl Config {
             default_future_deployment_target(byoh_enabled),
         ))?;
 
+        let bind_addr = std::env::var("AEGIS_BIND_ADDR")
+            .ok()
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| std::env::var("PORT").ok().map(|p| format!("0.0.0.0:{p}")))
+            .unwrap_or_else(|| "0.0.0.0:8080".to_string());
+
         Ok(Self {
             role: parse_role(&env_or("AEGIS_ROLE", "control-plane"))?,
             node_id,
             region: env_or("AEGIS_REGION", "global-sim"),
             cluster: env_or("AEGIS_CLUSTER", "aegis-75"),
-            bind_addr: env_or("AEGIS_BIND_ADDR", "0.0.0.0:8080"),
+            bind_addr,
             public_base: std::env::var("AEGIS_PUBLIC_BASE").ok(),
             execution_mode: parse_execution_mode(&env_or("AEGIS_EXECUTION_MODE", "paper"))?,
             market_scope: env_or("AEGIS_MARKET_SCOPE", "cex+dex-75"),
@@ -267,10 +273,7 @@ impl Config {
                 )),
             },
             identity: HostIdentity {
-                source: parse_identity_source(&env_or(
-                    "AEGIS_IDENTITY_SOURCE",
-                    "environment",
-                ))?,
+                source: parse_identity_source(&env_or("AEGIS_IDENTITY_SOURCE", "environment"))?,
                 logical_host_id: env_or("AEGIS_LOGICAL_HOST_ID", "aegis-node-logical-01"),
                 runtime_host_id: env_or("AEGIS_RUNTIME_HOST_ID", "aegis-node-runtime-01"),
                 logical_site,
@@ -375,8 +378,9 @@ impl Config {
         }
 
         if self.zeroclaw_enabled && self.zeroclaw_gateway_url.is_none() {
-            architecture_errors.push(
-                "zeroclaw enabled but ZEROCLAW_GATEWAY_URL is missing".to_string(),
+            warnings.push(
+                "zeroclaw enabled but ZEROCLAW_GATEWAY_URL is missing; continuing with zeroclaw disabled semantics"
+                    .to_string(),
             );
         }
 
@@ -424,11 +428,7 @@ fn default_hub_mode(byoh_enabled: bool) -> &'static str {
 }
 
 fn bool_str(v: bool) -> &'static str {
-    if v {
-        "true"
-    } else {
-        "false"
-    }
+    if v { "true" } else { "false" }
 }
 
 fn env_or(key: &str, fallback: &str) -> String {

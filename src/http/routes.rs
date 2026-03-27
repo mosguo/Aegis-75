@@ -2,167 +2,273 @@ use std::sync::Arc;
 
 use axum::{
     extract::State,
-    http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
-use chrono::Utc;
-use serde_json::json;
-use tracing::{error, info};
+use serde::Serialize;
 
-use crate::{
-    core::app::AppState,
-    types::{
-        alerts::TestAlertRequest,
-        orders::{DexSimulationRequest, OrderIntent},
-    },
-};
+use crate::core::app::AppState;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
+        .route("/", get(root))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
-        .route("/v1/config", get(show_config))
-        .route("/v1/runtime/capabilities", get(show_runtime_capabilities))
-        .route("/v1/topology", get(show_topology))
-        .route("/v1/order/simulate", post(simulate_order))
-        .route("/v1/dex/simulate", post(simulate_dex))
-        .route("/v1/alert/test", post(test_alert))
+        .route("/v1/config", get(config_view))
+        .route("/v1/runtime/capabilities", get(runtime_capabilities))
+        .route("/v1/topology", get(topology))
         .with_state(state)
 }
 
+#[derive(Serialize)]
+struct RootResponse {
+    service: &'static str,
+    status: &'static str,
+    message: &'static str,
+}
+
+async fn root() -> impl IntoResponse {
+    Json(RootResponse {
+        service: "aegis-75",
+        status: "ok",
+        message: "Aegis-75 is reachable",
+    })
+}
+
+#[derive(Serialize)]
+struct HealthResponse<'a> {
+    status: &'a str,
+    service: &'a str,
+    role: String,
+    deployment: String,
+}
+
 async fn healthz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    info!("[RUNTIME][INFO] healthz ok host={} role={}", state.config.identity.runtime_host_id, state.config.role);
-    Json(json!({
-        "status": "ok",
-        "service": "aegis-75",
-        "role": state.config.role.to_string(),
-        "node_id": state.config.node_id,
-        "host_class": state.config.byoh.host_class.to_string(),
-        "hub_mode": state.config.byoh.hub_mode.to_string(),
-        "deployment_target": state.config.deployment.active_target.to_string(),
-        "logical_host_id": state.config.identity.logical_host_id,
-        "runtime_host_id": state.config.identity.runtime_host_id,
-        "time": Utc::now(),
-    }))
+    Json(HealthResponse {
+        status: "ok",
+        service: "aegis-75",
+        role: state.config.role.to_string(),
+        deployment: state.config.deployment.active_target.to_string(),
+    })
+}
+
+#[derive(Serialize)]
+struct ReadyModules {
+    http: bool,
+    config: bool,
+    zeroclaw: bool,
+    byoh_profile: bool,
+}
+
+#[derive(Serialize)]
+struct ReadyResponse {
+    ready: bool,
+    service: &'static str,
+    modules: ReadyModules,
 }
 
 async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    info!("[RUNTIME][INFO] readyz ready={} host={}", true, state.config.identity.runtime_host_id);
-    Json(json!({
-        "ready": true,
-        "zeroclaw_enabled": state.config.zeroclaw_enabled,
-        "execution_mode": state.config.execution_mode.to_string(),
-        "market_scope": state.config.market_scope,
-        "byoh_enabled": state.config.byoh.enabled,
-        "deployment_target": state.config.deployment.active_target.to_string(),
-        "future_target": state.config.deployment.future_target.to_string(),
-        "migration_stage": state.config.deployment.migration_stage,
-        "signing_mode": state.config.byoh.signing_mode.to_string(),
-    }))
+    let zeroclaw_ready = !state.config.zeroclaw_enabled || state.zeroclaw.is_some();
+
+    let modules = ReadyModules {
+        http: true,
+        config: true,
+        zeroclaw: zeroclaw_ready,
+        byoh_profile: true,
+    };
+
+    let ready = modules.http && modules.config && modules.byoh_profile;
+
+    Json(ReadyResponse {
+        ready,
+        service: "aegis-75",
+        modules,
+    })
 }
 
-async fn show_config(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(json!({
-        "role": state.config.role,
-        "node_id": state.config.node_id,
-        "region": state.config.region,
-        "cluster": state.config.cluster,
-        "public_base": state.config.public_base,
-        "execution_mode": state.config.execution_mode,
-        "market_scope": state.config.market_scope,
-        "exchanges": state.config.exchanges,
-        "dex_networks": state.config.dex_networks,
-        "zeroclaw_enabled": state.config.zeroclaw_enabled,
-        "deployment": state.config.deployment,
-        "identity": state.config.identity,
-        "byoh": state.config.byoh,
-        "tuning": state.config.tuning,
-    }))
+#[derive(Serialize)]
+struct ConfigView {
+    role: String,
+    node_id: String,
+    region: String,
+    cluster: String,
+    bind_addr: String,
+    execution_mode: String,
+    market_scope: String,
+    exchanges: Vec<String>,
+    dex_networks: Vec<String>,
+    zeroclaw_enabled: bool,
+    zeroclaw_gateway_configured: bool,
+    deployment: DeploymentView,
+    identity: IdentityView,
+    byoh: ByohView,
+    logging: LoggingView,
+    tuning: TuningView,
 }
 
-async fn show_runtime_capabilities(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(state.runtime_capabilities())
+#[derive(Serialize)]
+struct DeploymentView {
+    active_target: String,
+    future_target: String,
+    migration_stage: String,
+    zeabur_compatible: bool,
+    byoh_cutover_ready: bool,
 }
 
-async fn show_topology(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    Json(json!({
-        "deployment": {
-            "active_target": state.config.deployment.active_target,
-            "future_target": state.config.deployment.future_target,
-            "migration_stage": state.config.deployment.migration_stage,
-            "zeabur_compatible": state.config.deployment.zeabur_compatible,
-            "byoh_cutover_ready": state.config.deployment.byoh_cutover_ready,
+#[derive(Serialize)]
+struct IdentityView {
+    logical_host_id: String,
+    runtime_host_id: String,
+    logical_site: String,
+    physical_host_planned: bool,
+    physical_host_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ByohView {
+    enabled: bool,
+    host_class: String,
+    hub_mode: String,
+    physical_site: String,
+    low_latency_gateway_enabled: bool,
+    analytics_archive_enabled: bool,
+    signing_mode: String,
+    market_data_ws_enabled: bool,
+    fixed_ip_expected: bool,
+    data_lake_path: String,
+    telemetry_label: String,
+}
+
+#[derive(Serialize)]
+struct LoggingView {
+    level: String,
+    heartbeat_enabled: bool,
+    heartbeat_interval_secs: u64,
+}
+
+#[derive(Serialize)]
+struct TuningView {
+    zero_copy_requested: bool,
+    hugepages_requested: bool,
+    cpu_affinity_requested: bool,
+    cpu_affinity_cores: Vec<usize>,
+}
+
+async fn config_view(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(ConfigView {
+        role: state.config.role.to_string(),
+        node_id: state.config.node_id.clone(),
+        region: state.config.region.clone(),
+        cluster: state.config.cluster.clone(),
+        bind_addr: state.config.bind_addr.clone(),
+        execution_mode: state.config.execution_mode.to_string(),
+        market_scope: state.config.market_scope.clone(),
+        exchanges: state.config.exchanges.clone(),
+        dex_networks: state.config.dex_networks.clone(),
+        zeroclaw_enabled: state.config.zeroclaw_enabled,
+        zeroclaw_gateway_configured: state.config.zeroclaw_gateway_url.is_some(),
+        deployment: DeploymentView {
+            active_target: state.config.deployment.active_target.to_string(),
+            future_target: state.config.deployment.future_target.to_string(),
+            migration_stage: state.config.deployment.migration_stage.clone(),
+            zeabur_compatible: state.config.deployment.zeabur_compatible,
+            byoh_cutover_ready: state.config.deployment.byoh_cutover_ready,
         },
-        "identity": {
-            "source": state.config.identity.source,
-            "logical_host_id": state.config.identity.logical_host_id,
-            "runtime_host_id": state.config.identity.runtime_host_id,
-            "logical_site": state.config.identity.logical_site,
-            "physical_host_planned": state.config.identity.physical_host_planned,
-            "physical_host_id": state.config.identity.physical_host_id,
+        identity: IdentityView {
+            logical_host_id: state.config.identity.logical_host_id.clone(),
+            runtime_host_id: state.config.identity.runtime_host_id.clone(),
+            logical_site: state.config.identity.logical_site.clone(),
+            physical_host_planned: state.config.identity.physical_host_planned,
+            physical_host_id: state.config.identity.physical_host_id.clone(),
         },
-        "control_plane": {
-            "zeroclaw_enabled": state.config.zeroclaw_enabled,
-            "host_class": "cloud/byoh mixed",
-            "responsibilities": [
-                "task orchestration",
-                "alert relay",
-                "web ui / api surface",
-                "global edge monitoring"
-            ]
+        byoh: ByohView {
+            enabled: state.config.byoh.enabled,
+            host_class: state.config.byoh.host_class.to_string(),
+            hub_mode: state.config.byoh.hub_mode.to_string(),
+            physical_site: state.config.byoh.physical_site.clone(),
+            low_latency_gateway_enabled: state.config.byoh.low_latency_gateway_enabled,
+            analytics_archive_enabled: state.config.byoh.analytics_archive_enabled,
+            signing_mode: state.config.byoh.signing_mode.to_string(),
+            market_data_ws_enabled: state.config.byoh.market_data_ws_enabled,
+            fixed_ip_expected: state.config.byoh.fixed_ip_expected,
+            data_lake_path: state.config.byoh.data_lake_path.clone(),
+            telemetry_label: state.config.byoh.telemetry_label.clone(),
         },
-        "data_execution_hub": {
-            "enabled": state.config.byoh.enabled,
-            "physical_site": state.config.byoh.physical_site,
-            "current_runtime_location": state.config.deployment.active_target,
-            "target_runtime_location": state.config.deployment.future_target,
-            "responsibilities": [
-                "low-latency websocket ingress",
-                "private analytics and archival",
-                "signing enclave / hsm integration",
-                "preferred execution path"
-            ]
+        logging: LoggingView {
+            level: state.config.logging.level.clone(),
+            heartbeat_enabled: state.config.logging.heartbeat_enabled,
+            heartbeat_interval_secs: state.config.logging.heartbeat_interval_secs,
         },
-        "market_scope": state.config.market_scope,
-        "cex_exchanges": state.config.exchanges,
-        "dex_networks": state.config.dex_networks,
-    }))
+        tuning: TuningView {
+            zero_copy_requested: state.config.tuning.zero_copy_requested,
+            hugepages_requested: state.config.tuning.hugepages_requested,
+            cpu_affinity_requested: state.config.tuning.cpu_affinity_requested,
+            cpu_affinity_cores: state.config.tuning.cpu_affinity_cores.clone(),
+        },
+    })
 }
 
-async fn simulate_order(
-    State(state): State<Arc<AppState>>,
-    Json(payload): Json<OrderIntent>,
-) -> impl IntoResponse {
-    let result = state.execution.simulate(payload);
-    (StatusCode::OK, Json(result))
+#[derive(Serialize)]
+struct RuntimeCapabilitiesResponse {
+    role: String,
+    host_class: String,
+    hub_mode: String,
+    deployment_target: String,
+    execution_mode: String,
+    market_scope: String,
+    zeroclaw_enabled: bool,
+    signing_mode: String,
+    zero_copy_requested: bool,
+    hugepages_requested: bool,
+    cpu_affinity_requested: bool,
 }
 
-async fn simulate_dex(
-    State(state): State<Arc<AppState>>,
-    Json(payload): Json<DexSimulationRequest>,
-) -> impl IntoResponse {
-    let result = state.dex.simulate(payload);
-    (StatusCode::OK, Json(result))
+async fn runtime_capabilities(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(RuntimeCapabilitiesResponse {
+        role: state.config.role.to_string(),
+        host_class: state.config.byoh.host_class.to_string(),
+        hub_mode: state.config.byoh.hub_mode.to_string(),
+        deployment_target: state.config.deployment.active_target.to_string(),
+        execution_mode: state.config.execution_mode.to_string(),
+        market_scope: state.config.market_scope.clone(),
+        zeroclaw_enabled: state.config.zeroclaw_enabled,
+        signing_mode: state.config.byoh.signing_mode.to_string(),
+        zero_copy_requested: state.config.tuning.zero_copy_requested,
+        hugepages_requested: state.config.tuning.hugepages_requested,
+        cpu_affinity_requested: state.config.tuning.cpu_affinity_requested,
+    })
 }
 
-async fn test_alert(
-    State(state): State<Arc<AppState>>,
-    Json(payload): Json<TestAlertRequest>,
-) -> impl IntoResponse {
-    match state.notify_alert(&payload.title, &payload.body).await {
-        Ok(_) => {
-            info!("[RUNTIME][INFO] test alert sent host={}", state.config.identity.runtime_host_id);
-            (StatusCode::OK, Json(json!({"sent": true}))).into_response()
-        }
-        Err(err) => {
-            error!("[ERROR] test alert failed error={}", err);
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({"sent": false, "error": err.to_string()})),
-            )
-                .into_response()
-        }
-    }
+#[derive(Serialize)]
+struct TopologyResponse {
+    service: &'static str,
+    logical_host_id: String,
+    runtime_host_id: String,
+    logical_site: String,
+    region: String,
+    cluster: String,
+    deployment_target: String,
+    future_target: String,
+    host_class: String,
+    hub_mode: String,
+    byoh_enabled: bool,
+    physical_host_planned: bool,
+}
+
+async fn topology(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(TopologyResponse {
+        service: "aegis-75",
+        logical_host_id: state.config.identity.logical_host_id.clone(),
+        runtime_host_id: state.config.identity.runtime_host_id.clone(),
+        logical_site: state.config.identity.logical_site.clone(),
+        region: state.config.region.clone(),
+        cluster: state.config.cluster.clone(),
+        deployment_target: state.config.deployment.active_target.to_string(),
+        future_target: state.config.deployment.future_target.to_string(),
+        host_class: state.config.byoh.host_class.to_string(),
+        hub_mode: state.config.byoh.hub_mode.to_string(),
+        byoh_enabled: state.config.byoh.enabled,
+        physical_host_planned: state.config.identity.physical_host_planned,
+    })
 }
