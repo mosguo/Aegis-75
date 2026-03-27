@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Aegis-75 Dashboard</title>
+</head>
+<body style="font-family: Arial; padding: 20px;">
+
+<h2>Wallet</h2>
+<div id="wallet"></div>
+
+<h2>Trading Pairs</h2>
+<div id="pairs"></div>
+
+<script>
+async function loadWallet() {
+  const res = await fetch("/api/dashboard/wallet");
+  const data = await res.json();
+
+  document.getElementById("wallet").innerHTML = `
+    User: ${data.userId}<br/>
+    Balance: ${data.currency} ${data.balance}<br/>
+    Address: ${data.depositAddress}<br/>
+    <button onclick="copy('${data.depositAddress}')">Copy</button>
+  `;
+}
+
+async function loadPairs() {
+  const res = await fetch("/api/dashboard/trading-pairs");
+  const data = await res.json();
+
+  let html = "";
+  data.pairs.forEach(p => {
+    html += `
+      <div style="margin-bottom:10px;">
+        ${p.symbol} |
+        Threshold: ${p.spreadThreshold} |
+        Auto: ${p.autoTrigger} |
+        Mode: ${p.executionMode}
+      </div>
+    `;
+  });
+
+  document.getElementById("pairs").innerHTML = html;
+}
+
+function copy(text) {
+  navigator.clipboard.writeText(text);
+  alert("Copied");
+}
+
+loadWallet();
+loadPairs();
+</script>
+
+</body>
+</html>

@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.dashboard_api import router as dashboard_router
+from fastapi.staticfiles import StaticFiles
 
+app.mount("/dashboard", StaticFiles(directory="static", html=True), name="dashboard")
 app = FastAPI(title="Aegis-75 V3.0.2 Compose")
 
 app.add_middleware(
