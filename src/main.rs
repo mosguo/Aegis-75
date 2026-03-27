@@ -1,6 +1,7 @@
 mod arbitrage;
 mod control;
 mod core;
+mod dashboard;
 mod dex;
 mod execution;
 mod http;
@@ -19,11 +20,11 @@ use crate::{
     dex::router::DexRouter,
     execution::router::ExecutionRouter,
     http::routes::build_router,
+    market::cache::{new_shared_cache, spawn_market_refresh},
 };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 先用 stdout/stderr 打，避免 tracing 尚未初始化前錯誤被吃掉
     println!("[BOOT][INFO] Aegis-75 starting...");
 
     let config = match Config::from_env() {
@@ -49,24 +50,16 @@ async fn main() -> anyhow::Result<()> {
     );
     info!(
         "[BOOT][INFO] zeroclaw_mode={}",
-        if config.zeroclaw_enabled {
-            "control-plane"
-        } else {
-            "disabled"
-        }
+        if config.zeroclaw_enabled { "control-plane" } else { "disabled" }
     );
 
     let startup = config.startup_checks();
-
     for warning_message in &startup.warnings {
         warn!("[WARN] {warning_message}");
     }
-
     for arch_error in &startup.architecture_errors {
         error!("[ERROR][ARCH] {arch_error}");
     }
-
-    // 關鍵：不要因 startup check 失敗直接退出，先讓服務活著以利觀測
     if startup.passed() {
         info!("[BOOT][INFO] runtime_checks=passed");
     } else {
@@ -85,11 +78,15 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    let market_cache = new_shared_cache(5);
+    spawn_market_refresh(config.clone(), market_cache.clone());
+
     let state = Arc::new(AppState::new(
         config.clone(),
         ExecutionRouter::new(config.clone()),
         DexRouter::new(config.clone()),
         zeroclaw,
+        market_cache,
     ));
 
     announce_mode(&state).await;
@@ -142,10 +139,6 @@ fn init_tracing(level: &str) {
 }
 
 fn resolve_bind_addr(config: &Config) -> anyhow::Result<SocketAddr> {
-    // 優先順序：
-    // 1. config.bind_addr
-    // 2. PORT -> 0.0.0.0:{PORT}
-    // 3. fallback 0.0.0.0:8080
     let raw_addr = if !config.bind_addr.trim().is_empty() {
         config.bind_addr.clone()
     } else if let Ok(port) = std::env::var("PORT") {
@@ -212,7 +205,6 @@ async fn announce_mode(state: &Arc<AppState>) {
         state.config.execution_mode,
         state.config.exchanges
     );
-
     info!(
         "[RUNTIME][INFO] dex_adapter initialized chains={:?}",
         state.config.dex_networks
@@ -235,7 +227,6 @@ fn spawn_heartbeat(state: Arc<AppState>) {
     }
 
     let interval_secs = state.config.logging.heartbeat_interval_secs.max(5);
-
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
         loop {

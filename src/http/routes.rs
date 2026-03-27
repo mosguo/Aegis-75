@@ -1,22 +1,29 @@
-use std::sync::Arc;
+use std::{convert::Infallible, sync::Arc, time::Duration};
 
 use axum::{
     extract::State,
-    response::IntoResponse,
+    response::{sse::{Event, KeepAlive, Sse}, Html, IntoResponse},
     routing::{get, post},
     Json, Router,
 };
 use serde::Serialize;
+use tokio_stream::{wrappers::IntervalStream, StreamExt};
+use tracing::info;
 
 use crate::{
     arbitrage,
     core::app::AppState,
+    dashboard,
     types::orders::{DexSimulationRequest, OrderIntent},
 };
 
 pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(root))
+        .route("/dashboard", get(dashboard_page))
+        .route("/v1/dashboard/summary", get(dashboard_summary))
+        .route("/v1/dashboard/live", get(dashboard_summary))
+        .route("/v1/dashboard/stream", get(dashboard_stream))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
         .route("/v1/config", get(config_view))
@@ -41,6 +48,30 @@ async fn root() -> impl IntoResponse {
         status: "ok",
         message: "Aegis-75 is reachable",
     })
+}
+
+async fn dashboard_summary(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(dashboard::service::build_summary(&state).await)
+}
+
+async fn dashboard_page() -> impl IntoResponse {
+    Html(dashboard::view::dashboard_html())
+}
+
+async fn dashboard_stream(
+    State(state): State<Arc<AppState>>,
+) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
+    let interval = tokio::time::interval(Duration::from_secs(3));
+    let stream = IntervalStream::new(interval).then(move |_| {
+        let state = state.clone();
+        async move {
+            let summary = dashboard::service::build_summary(&state).await;
+            let json = serde_json::to_string(&summary).unwrap_or_else(|_| "{}".to_string());
+            Ok::<Event, Infallible>(Event::default().data(json))
+        }
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 #[derive(Serialize)]
@@ -78,19 +109,15 @@ struct ReadyResponse {
 async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let zeroclaw_ready = !state.config.zeroclaw_enabled || state.zeroclaw.is_some();
 
-    let modules = ReadyModules {
-        http: true,
-        config: true,
-        zeroclaw: zeroclaw_ready,
-        byoh_profile: true,
-    };
-
-    let ready = modules.http && modules.config && modules.byoh_profile;
-
     Json(ReadyResponse {
-        ready,
+        ready: true,
         service: "aegis-75",
-        modules,
+        modules: ReadyModules {
+            http: true,
+            config: true,
+            zeroclaw: zeroclaw_ready,
+            byoh_profile: true,
+        },
     })
 }
 
@@ -288,6 +315,7 @@ struct TopologyResponse {
 }
 
 async fn topology(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    info!("[RUNTIME][DASHBOARD] topology requested");
     Json(TopologyResponse {
         service: "aegis-75",
         logical_host_id: state.config.identity.logical_host_id.clone(),

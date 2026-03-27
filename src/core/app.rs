@@ -8,6 +8,7 @@ use crate::{
     control::zeroclaw::ZeroClawClient,
     dex::router::DexRouter,
     execution::router::ExecutionRouter,
+    market::cache::SharedMarketCache,
     types::alerts::AlertPayload,
 };
 
@@ -19,6 +20,7 @@ pub struct AppState {
     pub execution: ExecutionRouter,
     pub dex: DexRouter,
     pub zeroclaw: Option<Arc<ZeroClawClient>>,
+    pub market_cache: SharedMarketCache,
 }
 
 impl AppState {
@@ -27,12 +29,14 @@ impl AppState {
         execution: ExecutionRouter,
         dex: DexRouter,
         zeroclaw: Option<ZeroClawClient>,
+        market_cache: SharedMarketCache,
     ) -> Self {
         Self {
             config,
             execution,
             dex,
             zeroclaw: zeroclaw.map(Arc::new),
+            market_cache,
         }
     }
 
