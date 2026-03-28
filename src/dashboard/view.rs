@@ -76,6 +76,7 @@ th { color:#9fb0d8; background:#0f1730; }
         <th>Spread</th>
         <th>Spread %</th>
         <th>Threshold</th>
+        <th>Profit (300 USDT)</th>
         <th>Decision</th>
         <th>Arbitrage</th>
         <th>Age (ms)</th>
@@ -120,6 +121,7 @@ function render(summary){
       <td>${num(pair.spread_abs, 4)}</td>
       <td>${num(pair.spread_pct, 4)}</td>
       <td>${num(pair.threshold, 4)}</td>
+      <td>${num(pair.estimated_profit_usdt, 4)}</td>
       <td>${pair.decision}</td>
       <td>${pair.arbitrage === null ? badge('NO DATA', 'warn') : pair.arbitrage ? badge('YES', 'ok') : badge('NO', 'bad')}</td>
       <td>${pair.age_ms ?? '-'}</td>

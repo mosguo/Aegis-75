@@ -1,0 +1,302 @@
+Level 4.2 Strategy Trading
+VWAP + Slippage + Latency 進階版落地工作清單
+
+一、目標定義
+目前系統已可完成候選套利偵測最小版，能回答「市場是否存在 raw spread > 0 且扣除交易費後仍 > 0 的候選機會」。
+
+Level 4.2 的目標不是直接進入真實下單，而是將候選機會模型提升為更接近可成交結果的進階版模型，回答：
+
+1. 若以固定交易額 300 USDT 進場，實際可成交均價是多少
+2. 扣除深度造成的 slippage 後，是否仍有利潤
+3. 考慮 latency 後，候選機會是否仍可成立
+4. 哪些路徑只是理論候選，哪些路徑接近真實可執行
+
+二、目前狀態
+目前已完成：
+
+1. 交易所配對與 symbol mapping
+2. 候選套利最小版偵測
+3. bestAsk / bestBid 價格口徑
+4. quote skew 檢查
+5. 交易費扣除
+6. debug 欄位與 drop reason 統計
+7. dashboard 候選套利視圖
+
+目前尚未完成：
+
+1. VWAP 成交均價
+2. order book depth-based slippage
+3. latency 損耗模型
+4. min size / lot size / tick size 檢查
+5. partial fill 風險
+6. maker/taker 與帳戶實際費率層級
+7. Rust 與 Python 兩端同級進階模型
+
+三、Level 4.2 核心工作項目
+
+4.2.1 Order Book Depth 資料層
+目標：
+抓取各交易所現貨 order book depth，而非只看 ticker 或 top-of-book。
+
+工作內容：
+1. 建立各交易所 depth adapter
+2. 先支援 Binance、OKX、Bybit、Bitget
+3. 每個 adapter 回傳統一格式：
+   - venue
+   - symbol
+   - canonical_symbol
+   - ts_exchange
+   - ts_received
+   - bids: [price, qty]
+   - asks: [price, qty]
+   - instrument_type
+4. 僅抓測試用 watchlist 前 20 個交易對
+5. depth 層與候選偵測層分離，避免主流程混亂
+
+完成標準：
+1. 可成功抓到 4 家交易所 depth snapshot
+2. 每家回傳格式一致
+3. dashboard 或 API 可查單筆交易對 depth 摘要
+
+4.2.2 VWAP 計算模型
+目標：
+以固定交易額 300 USDT 為基準，根據 depth 計算實際平均成交價。
+
+工作內容：
+1. 買腿：
+   - 由 asks 逐層吃單
+   - 計算 300 USDT 可成交數量與 VWAP buy price
+2. 賣腿：
+   - 由 bids 逐層吃單
+   - 計算可賣出數量與 VWAP sell price
+3. 若一側深度不足：
+   - 標記 INSUFFICIENT_DEPTH
+4. 統一輸出：
+   - buyVwap
+   - sellVwap
+   - executableQty
+   - consumedLevelsBuy
+   - consumedLevelsSell
+
+完成標準：
+1. 每筆候選 route 可產出 buyVwap / sellVwap
+2. 能明確看出 top-of-book 與 VWAP 的差異
+3. 深度不足時會被正確丟棄
+
+4.2.3 Slippage 模型
+目標：
+將 depth 造成的價格劣化納入利潤計算。
+
+工作內容：
+1. 定義：
+   - buySlippage = buyVwap - bestAsk
+   - sellSlippage = bestBid - sellVwap
+2. 輸出：
+   - totalSlippageCost
+   - slippagePct
+3. 重新計算：
+   - grossSpreadAfterSlippage
+   - estimatedProfitAfterFeeAndSlippage
+4. 本階段 slippage 只來自 order book depth
+5. 暫不加入人工 buffer 型 slippage
+
+完成標準：
+1. 每筆候選 route 都能顯示 slippage 成本
+2. 能區分：
+   - raw spread 成立
+   - fee 後成立
+   - fee + slippage 後仍成立
+
+4.2.4 Latency 模型
+目標：
+估算交易所資料延遲與執行延遲對候選利潤的侵蝕。
+
+工作內容：
+1. 定義 latency 欄位：
+   - quoteAgeMs
+   - timeSkewMs
+   - assumedExecutionDelayMs
+2. 建立簡化 latency shock model：
+   - 依交易對短期波動或固定 basis points，估算不利滑移
+3. 輸出：
+   - latencyPenaltyUsdt
+   - estimatedProfitAfterLatency
+4. latency penalty 先採保守版簡化模型
+5. 本階段不做真實回放模擬
+
+完成標準：
+1. 每筆 route 可顯示 latency penalty
+2. 能區分：
+   - fee 後成立
+   - fee + slippage 後成立
+   - fee + slippage + latency 後仍成立
+
+4.2.5 執行可行性檢查
+目標：
+讓模型更接近真實下單限制。
+
+工作內容：
+1. 檢查各交易所：
+   - min order size
+   - min notional
+   - lot size
+   - tick size
+2. VWAP 計算後做 quantity rounding
+3. 若 rounding 後利潤失真，標記 drop
+4. 輸出 droppedReason：
+   - INSUFFICIENT_DEPTH
+   - BELOW_MIN_NOTIONAL
+   - LOT_SIZE_MISMATCH
+   - PRICE_TICK_MISMATCH
+
+完成標準：
+1. route 不只看理論 spread，也會檢查是否可下單
+2. drop reason 可精準定位問題
+
+4.2.6 候選套利摘要升級
+目標：
+把候選套利表升級成分層判讀模型。
+
+工作內容：
+1. 每個交易對保留最佳 route
+2. 追加欄位：
+   - rawSpread
+   - rawSpreadPct
+   - feeCost
+   - profitAfterFee
+   - slippageCost
+   - profitAfterSlippage
+   - latencyPenalty
+   - profitAfterLatency
+   - executableQty
+   - droppedReason
+3. dashboard 顯示最佳 route 摘要
+4. 可排序：
+   - 最接近正獲利
+   - 最接近可執行
+
+完成標準：
+1. 使用者可一眼看出哪一層把機會吃掉
+2. dashboard 可做候選交易排序
+
+4.2.7 驗證與統計
+目標：
+驗證市場是否存在真正接近可成交的候選機會。
+
+工作內容：
+1. Test A：
+   - fee = 0
+   - slippage = 0
+   - latency = 0
+   - 驗證 raw spread 候選數
+2. Test B：
+   - fee only
+   - 驗證 fee 後候選數
+3. Test C：
+   - fee + slippage
+   - 驗證深度後候選數
+4. Test D：
+   - fee + slippage + latency
+   - 驗證最終候選數
+5. 統計各階段 drop reason 比例
+
+完成標準：
+1. 可明確回答「候選為何逐層消失」
+2. 可比較不同模型層級的候選數量
+
+四、資料欄位設計
+
+4.2.1 Depth Snapshot
+- venue
+- symbol
+- canonical_symbol
+- instrument_type
+- ts_exchange
+- ts_received
+- bids
+- asks
+
+4.2.2 Advanced Route Evaluation
+- buyVenue
+- sellVenue
+- buySymbol
+- sellSymbol
+- bestAsk
+- bestBid
+- buyVwap
+- sellVwap
+- executableQty
+- rawSpread
+- rawSpreadPct
+- feeCost
+- profitAfterFee
+- slippageCost
+- profitAfterSlippage
+- latencyPenalty
+- profitAfterLatency
+- tsA
+- tsB
+- timeSkewMs
+- quoteAgeMs
+- candidateRaw
+- candidateAfterFee
+- candidateAfterSlippage
+- candidateAfterLatency
+- droppedReason
+
+五、建議實作順序
+
+Step 1
+建立 4 家交易所 depth adapter
+
+Step 2
+完成 300 USDT VWAP 計算
+
+Step 3
+加入 depth slippage 成本
+
+Step 4
+加入 latency penalty 簡化模型
+
+Step 5
+加入最小下單限制與 rounding 檢查
+
+Step 6
+升級 dashboard 候選套利視圖
+
+Step 7
+完成多層 drop stats 驗證
+
+六、Level 4.2 驗收條件
+
+1. 可取得 4 家交易所 depth snapshot
+2. 可對 20 組 watchlist 交易對計算 VWAP
+3. 可輸出 fee / slippage / latency 分層利潤
+4. 可顯示 executableQty 與深度不足原因
+5. dashboard 可顯示每交易對最佳進階 route
+6. 能統計：
+   - RAW_SPREAD<=0
+   - PROFIT_AFTER_FEE<=0
+   - PROFIT_AFTER_SLIPPAGE<=0
+   - PROFIT_AFTER_LATENCY<=0
+   - INSUFFICIENT_DEPTH
+   - MAPPING_ERROR
+   - QUOTE_SKEW
+7. 能回答：
+   - 是否存在候選套利
+   - 是否存在扣 fee 後仍正
+   - 是否存在扣 fee + slippage + latency 後仍正
+
+七、結論
+目前 Aegis-75 已完成候選套利最小版，可作為 Level 4.2 的基底。
+
+下一階段的核心不是增加更多表面欄位，而是把「可看到的候選價差」逐步收斂為「更接近真實成交結果的候選模型」。
+
+因此，Level 4.2 的主軸應為：
+1. depth
+2. VWAP
+3. slippage
+4. latency
+5. executable constraints
+
+完成後，系統才能從「候選機會探索工具」提升為「準可成交套利驗證工具」。

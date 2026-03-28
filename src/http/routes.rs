@@ -80,14 +80,17 @@ struct HealthResponse<'a> {
     service: &'a str,
     role: String,
     deployment: String,
+    python_api_reachable: bool,
 }
 
 async fn healthz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let python_api_reachable = check_python_api_health().await;
     Json(HealthResponse {
         status: "ok",
         service: "aegis-75",
         role: state.config.role.to_string(),
         deployment: state.config.deployment.active_target.to_string(),
+        python_api_reachable,
     })
 }
 
@@ -97,6 +100,7 @@ struct ReadyModules {
     config: bool,
     zeroclaw: bool,
     byoh_profile: bool,
+    python_api: bool,
 }
 
 #[derive(Serialize)]
@@ -108,15 +112,19 @@ struct ReadyResponse {
 
 async fn readyz(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let zeroclaw_ready = !state.config.zeroclaw_enabled || state.zeroclaw.is_some();
+    let python_api_ready = check_python_api_health().await;
+    let startup_ready = state.config.startup_checks().passed();
+    let ready = startup_ready && zeroclaw_ready && python_api_ready;
 
     Json(ReadyResponse {
-        ready: true,
+        ready,
         service: "aegis-75",
         modules: ReadyModules {
             http: true,
-            config: true,
+            config: startup_ready,
             zeroclaw: zeroclaw_ready,
             byoh_profile: true,
+            python_api: python_api_ready,
         },
     })
 }
@@ -330,4 +338,23 @@ async fn topology(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         byoh_enabled: state.config.byoh.enabled,
         physical_host_planned: state.config.identity.physical_host_planned,
     })
+}
+
+async fn check_python_api_health() -> bool {
+    let base_url = std::env::var("PYTHON_API_BASE_URL")
+        .unwrap_or_else(|_| "http://python-api:8000".to_string());
+    let health_url = format!("{}/healthz", base_url.trim_end_matches('/'));
+
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return false,
+    };
+
+    match client.get(health_url).send().await {
+        Ok(response) => response.status().is_success(),
+        Err(_) => false,
+    }
 }

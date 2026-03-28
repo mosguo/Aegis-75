@@ -1,7 +1,7 @@
 Plan Level Roadmap
 Date: 2026-03-27
 Project: Aegis-75
-
+ 
 ==============================
 Level 4 工作清單
 ==============================
@@ -15,7 +15,7 @@ Level 4.1 基本交易
 工作項目
 - 建立即時報價整合的正式資料流
 - 建立交易對 registry 與 venue symbol mapping
-- 查詢各交易所支援的交易對與可用性
+- 查詢各交易所支援的交易對與可用性/Threshold 調整真正和 Decision 連動
 - 建立 open orders / pending orders / executed trades 基本資料模型
 - 提供目前掛單總量、各交易對掛單量、成交量、成交筆數查詢
 - 將每次交易預設以 100 USDT 作為假設交易總額

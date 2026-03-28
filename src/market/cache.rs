@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{fs, path::PathBuf, sync::Arc};
 
 use chrono::Utc;
+use serde::Deserialize;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -11,6 +12,11 @@ use super::types::{MarketCache, PairSnapshot, VenueQuote};
 pub type SharedMarketCache = Arc<RwLock<MarketCache>>;
 
 pub fn default_symbols() -> Vec<String> {
+    let configured = load_tracked_symbols();
+    if !configured.is_empty() {
+        return configured;
+    }
+
     vec![
         "BTCUSDT".to_string(),
         "ETHUSDT".to_string(),
@@ -51,13 +57,19 @@ pub fn spawn_market_refresh(config: Config, cache: SharedMarketCache) {
 }
 
 async fn refresh_once(config: &Config, cache: &SharedMarketCache) -> anyhow::Result<usize> {
+    let tracked_symbols = load_tracked_symbols();
     let symbols = {
         let guard = cache.read().await;
-        guard
+        let existing = guard
             .pairs
             .iter()
             .map(|p| p.symbol.clone())
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        if tracked_symbols.is_empty() {
+            existing
+        } else {
+            tracked_symbols
+        }
     };
 
     let mut refreshed = Vec::with_capacity(symbols.len());
@@ -109,4 +121,44 @@ async fn refresh_once(config: &Config, cache: &SharedMarketCache) -> anyhow::Res
     let _ = config; // reserved for future config-driven filters
 
     Ok(guard.pairs.len())
+}
+
+const DEFAULT_PAIR_CONFIG_PATH: &str = "python/data/trading_pairs.json";
+
+#[derive(Debug, Deserialize)]
+struct TradingPairFile {
+    #[serde(default)]
+    pairs: Vec<TradingPairConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TradingPairConfig {
+    symbol: String,
+}
+
+fn load_tracked_symbols() -> Vec<String> {
+    let path = pair_config_path();
+    let Ok(raw) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(payload) = serde_json::from_str::<TradingPairFile>(&raw) else {
+        return Vec::new();
+    };
+
+    payload
+        .pairs
+        .into_iter()
+        .map(|pair| pair.symbol.trim().to_ascii_uppercase())
+        .filter(|symbol| !symbol.is_empty())
+        .collect()
+}
+
+fn pair_config_path() -> PathBuf {
+    if let Ok(path) = std::env::var("AEGIS_PAIR_CONFIG_PATH") {
+        let trimmed = path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+    PathBuf::from(DEFAULT_PAIR_CONFIG_PATH)
 }
